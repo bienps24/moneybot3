@@ -16,8 +16,6 @@ CHANNEL_LINK = os.environ.get("CHANNEL_LINK", "")
 PAYMENT_LINK = os.environ.get("PAYMENT_LINK", "")
 VIDEO_1_ID   = os.environ.get("VIDEO_1_ID", "")
 VIDEO_2_ID   = os.environ.get("VIDEO_2_ID", "")
-VIDEO_3_ID   = os.environ.get("VIDEO_3_ID", "")
-VIDEO_4_ID   = os.environ.get("VIDEO_4_ID", "")
 
 VIDEO_DELETE_DELAY = 20
 CHAT_DELETE_DELAY  = 1200
@@ -89,8 +87,6 @@ async def send_content(bot, chat_id, state):
     for label, vid_id in [
         ("VIDEO_1_ID", VIDEO_1_ID),
         ("VIDEO_2_ID", VIDEO_2_ID),
-        ("VIDEO_3_ID", VIDEO_3_ID),
-        ("VIDEO_4_ID", VIDEO_4_ID),
     ]:
         if not vid_id:
             logger.warning(label + " is empty!")
@@ -145,11 +141,22 @@ async def auto_reply_share(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state["messages"].append(update.message.message_id)
     state["messages"].append(msg.message_id)
 
+async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin sends a video to bot → bot replies with the correct file_id."""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    if update.message and update.message.video:
+        fid = update.message.video.file_id
+        await update.message.reply_text(
+            "✅ *file_id for this bot:*\n\n`" + fid + "`",
+            parse_mode="Markdown"
+        )
+
 async def test_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
     await update.message.reply_text("Testing 4 videos...")
-    for label, vid_id in [("VIDEO_1_ID", VIDEO_1_ID), ("VIDEO_2_ID", VIDEO_2_ID), ("VIDEO_3_ID", VIDEO_3_ID), ("VIDEO_4_ID", VIDEO_4_ID)]:
+    for label, vid_id in [("VIDEO_1_ID", VIDEO_1_ID), ("VIDEO_2_ID", VIDEO_2_ID)]:
         if not vid_id:
             await update.message.reply_text(label + " EMPTY!")
             continue
@@ -162,6 +169,7 @@ async def test_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("testvideo", test_video))
+    app.add_handler(MessageHandler(filters.VIDEO & filters.User(ADMIN_ID), get_file_id))
     app.add_handler(ChatJoinRequestHandler(handle_join_request))
     app.add_handler(MessageHandler(filters.ALL, auto_reply_share))
     logger.info("Bot running.")
