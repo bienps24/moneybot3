@@ -18,7 +18,7 @@ VIDEO_1_ID   = os.environ.get("VIDEO_1_ID", "")
 VIDEO_2_ID   = os.environ.get("VIDEO_2_ID", "")
 
 VIDEO_DELETE_DELAY = 20
-CHAT_DELETE_DELAY  = 1200
+CHAT_DELETE_DELAY  = 300  # 5 minutes
 HEART_EFFECT_ID    = "5159385139981059251"
 BASE_VIDEO_COUNT   = 16568
 
@@ -42,10 +42,8 @@ def get_user(uid):
 
 def upsert_user(uid):
     if uid not in channel_users:
-        # First time — start at base count
         channel_users[uid] = {"messages": [], "video_count": BASE_VIDEO_COUNT}
     else:
-        # Returning user — increase their personal counter
         channel_users[uid]["video_count"] += random.randint(50, 200)
         channel_users[uid]["messages"] = []
     return channel_users[uid]
@@ -72,17 +70,18 @@ async def send_content(bot, chat_id, state):
     vid_count = f"{state['video_count']:,}"
 
     # Heart with effect
+    heart_msg_id = None
     try:
         heart_msg = await bot.send_message(
             chat_id=chat_id,
             text="\u2764\ufe0f",
             message_effect_id=HEART_EFFECT_ID,
         )
-        state["messages"].append(heart_msg.message_id)
+        heart_msg_id = heart_msg.message_id
     except Exception as e:
         logger.warning("Heart effect error: " + str(e))
 
-    # 4 videos
+    # Videos
     video_msgs = []
     for label, vid_id in [
         ("VIDEO_1_ID", VIDEO_1_ID),
@@ -94,7 +93,6 @@ async def send_content(bot, chat_id, state):
         try:
             msg = await bot.send_video(chat_id=chat_id, video=vid_id, protect_content=True, supports_streaming=True)
             video_msgs.append(msg.message_id)
-            state["messages"].append(msg.message_id)
             logger.info(label + " sent to " + str(chat_id))
         except Exception as e:
             logger.error(label + " error: " + str(e))
@@ -113,9 +111,17 @@ async def send_content(bot, chat_id, state):
     )
 
     info = await bot.send_message(chat_id=chat_id, text=text, parse_mode="Markdown", reply_markup=make_buttons())
-    state["messages"].append(info.message_id)
-    asyncio.create_task(schedule_delete(bot, chat_id, video_msgs, VIDEO_DELETE_DELAY))
-    asyncio.create_task(schedule_delete(bot, chat_id, list(state["messages"]), CHAT_DELETE_DELAY))
+
+    # Schedule deletions - Videos = fast delete (20 sec)
+    if video_msgs:
+        asyncio.create_task(schedule_delete(bot, chat_id, video_msgs, VIDEO_DELETE_DELAY))
+    
+    # Heart + Promo = 5 minutes delay
+    other_msgs = []
+    if heart_msg_id:
+        other_msgs.append(heart_msg_id)
+    other_msgs.append(info.message_id)
+    asyncio.create_task(schedule_delete(bot, chat_id, other_msgs, CHAT_DELETE_DELAY))
 
 async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     join_req = update.chat_join_request
@@ -138,8 +144,10 @@ async def auto_reply_share(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Bump their video count on every chat
     state["video_count"] += random.randint(10, 50)
     msg = await update.message.reply_text("SHARE!")
-    state["messages"].append(update.message.message_id)
-    state["messages"].append(msg.message_id)
+    
+    # Schedule deletion for these messages
+    messages_to_delete = [update.message.message_id, msg.message_id]
+    asyncio.create_task(schedule_delete(context.bot, update.effective_chat.id, messages_to_delete, CHAT_DELETE_DELAY))
 
 async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin sends a video to bot → bot replies with the correct file_id."""
@@ -155,7 +163,7 @@ async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def test_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
-    await update.message.reply_text("Testing 4 videos...")
+    await update.message.reply_text("Testing videos...")
     for label, vid_id in [("VIDEO_1_ID", VIDEO_1_ID), ("VIDEO_2_ID", VIDEO_2_ID)]:
         if not vid_id:
             await update.message.reply_text(label + " EMPTY!")
