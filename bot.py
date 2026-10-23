@@ -27,7 +27,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.environ["BOT_TOKEN"].strip()
-ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
+ADMIN_ID = int(os.environ.get("ADMIN_ID", "7635888886"))
 CHANNEL_ID = int(os.environ["CHANNEL_ID"])
 CHANNEL_LINK = os.environ.get("CHANNEL_LINK", "").strip()
 PAYMENT_LINK = os.environ.get("PAYMENT_LINK", "").strip()
