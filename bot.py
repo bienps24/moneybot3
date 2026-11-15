@@ -358,7 +358,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/setvideo1  (reply to a video)\n"
         "/setvideo2  (reply to a video)\n\n"
         "Broadcast:\n"
-        "/broadcast  (reply to any message to send it to ALL users)\n"
+        "/sendall  (i-forward ang message sa bot, tapos i-reply ng /sendall)\n"
+        "/broadcast  (same as /sendall)\n"
         "/stats  (user counts)\n\n"
         "You can also send a video with caption:\n"
         "/setvideo1\n"
@@ -393,7 +394,7 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not update.message or not update.message.reply_to_message:
         await update.message.reply_text(
-            "Reply to the message you want to broadcast, then send /broadcast.\n\n"
+            "I-forward o i-send mo muna dito ang message, tapos i-reply mo ito ng /sendall.\n\n"
             "Pwede text, photo, video, o kahit anong message — "
             "iko-copy ito sa lahat ng users."
         )
@@ -446,7 +447,7 @@ async def broadcast_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     src = context.bot_data.pop("broadcast_src", None)
     if not src:
-        await query.edit_message_text("⚠️ Walang naka-queue na broadcast. Ulitin ang /broadcast.")
+        await query.edit_message_text("⚠️ Walang naka-queue na broadcast. Ulitin ang /sendall.")
         return
 
     if context.bot_data.get("broadcast_running"):
@@ -457,8 +458,23 @@ async def broadcast_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.edit_message_text("🚀 Broadcasting... (magbibigay ako ng progress updates)")
 
     asyncio.create_task(
-        run_broadcast(context, query.message.chat_id, src[0], src[1])
+        run_broadcast_safe(context, query.message.chat_id, src[0], src[1])
     )
+
+
+async def run_broadcast_safe(context, admin_chat_id: int, src_chat_id: int, src_message_id: int):
+    """Wrapper: kahit mag-crash ang broadcast, mare-reset pa rin ang
+    broadcast_running flag para hindi ma-stuck ang /sendall."""
+    try:
+        await run_broadcast(context, admin_chat_id, src_chat_id, src_message_id)
+    except Exception as e:
+        logger.error("Broadcast crashed: %s", e)
+        try:
+            await context.bot.send_message(admin_chat_id, f"❌ Broadcast error: {e}")
+        except Exception:
+            pass
+    finally:
+        context.bot_data["broadcast_running"] = False
 
 
 async def run_broadcast(context, admin_chat_id: int, src_chat_id: int, src_message_id: int):
@@ -698,7 +714,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats))
-    app.add_handler(CommandHandler("broadcast", broadcast_cmd))
+    app.add_handler(CommandHandler(["sendall", "broadcast"], broadcast_cmd))
     app.add_handler(CallbackQueryHandler(broadcast_callback, pattern="^bc_"))
     app.add_handler(CommandHandler("showvideos", show_videos))
     app.add_handler(CommandHandler("testvideo", test_video))
